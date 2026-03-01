@@ -105,8 +105,7 @@ export function ScheduleToolbar({
       <div className="flex flex-wrap items-center gap-2">
         {/* Schedule Selector */}
         <Select
-          key={currentSchedule?.id || 'no-schedule'}
-          value={currentSchedule?.id || ''}
+          value={currentSchedule?.id ?? ''}
           onValueChange={onLoadSchedule}
         >
           <SelectTrigger className="w-full sm:w-48">
