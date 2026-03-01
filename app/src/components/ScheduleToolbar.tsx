@@ -86,7 +86,8 @@ export function ScheduleToolbar({
       <div className="flex flex-wrap items-center gap-2">
         {/* Schedule Selector */}
         <Select
-          value={currentSchedule?.id ?? undefined}
+          key={currentSchedule?.id || 'no-schedule'}
+          value={currentSchedule?.id || ''}
           onValueChange={onLoadSchedule}
         >
           <SelectTrigger className="w-full sm:w-48">
@@ -256,7 +257,7 @@ export function ScheduleToolbar({
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end" className="w-48">
-                  <DropdownMenuItem onClick={onDuplicateSchedule}>
+                  <DropdownMenuItem onClick={() => requestAnimationFrame(onDuplicateSchedule)}>
                     <Copy className="h-4 w-4 mr-2" />
                     Duplicate
                   </DropdownMenuItem>
@@ -272,7 +273,7 @@ export function ScheduleToolbar({
                     <BarChart3 className="h-4 w-4 mr-2" />
                     Statistics
                   </DropdownMenuItem>
-                  <DropdownMenuItem onClick={onDeleteSchedule} className="text-red-500">
+                  <DropdownMenuItem onClick={() => requestAnimationFrame(onDeleteSchedule)} className="text-red-500">
                     <Trash2 className="h-4 w-4 mr-2" />
                     Delete
                   </DropdownMenuItem>
