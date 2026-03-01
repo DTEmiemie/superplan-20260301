@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import type { Schedule, AppSettings } from '@/types';
 import { createAnchorActivities } from '@/lib/scheduleEngine';
+import { generateId } from '@/lib/utils';
 
 const SCHEDULES_KEY = 'supermemo-plan-schedules';
 const SETTINGS_KEY = 'supermemo-plan-settings';
@@ -36,7 +37,13 @@ export function useScheduleStorage() {
         setSchedules(JSON.parse(savedSchedules));
       }
       if (savedSettings) {
-        setSettings(JSON.parse(savedSettings));
+        const parsed = JSON.parse(savedSettings);
+        // Merge with defaults to handle missing fields from older versions
+        setSettings((prev) => ({
+          ...prev,
+          ...parsed,
+          notifications: { ...prev.notifications, ...parsed.notifications },
+        }));
       }
       if (savedCurrent) {
         setCurrentScheduleId(savedCurrent);
@@ -113,7 +120,7 @@ export function useScheduleStorage() {
   const createNewSchedule = useCallback(
     (name: string, date: string = new Date().toISOString().split('T')[0]): Schedule => {
       const newSchedule: Schedule = {
-        id: crypto.randomUUID(),
+        id: generateId(),
         name,
         date,
         totalHours: settings.defaultScheduleHours,
@@ -140,11 +147,11 @@ export function useScheduleStorage() {
 
       const duplicated: Schedule = {
         ...original,
-        id: crypto.randomUUID(),
+        id: generateId(),
         date: newDate,
         activities: original.activities.map((a) => ({
           ...a,
-          id: crypto.randomUUID(),
+          id: generateId(),
           isCompleted: false,
           isActive: false,
           start: '00:00',

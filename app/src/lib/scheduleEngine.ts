@@ -2,6 +2,7 @@
 // Core algorithm for calculating optimal activity allocations
 
 import type { Activity } from '@/types';
+import { generateId } from '@/lib/utils';
 
 // Parse time string (HH:MM) to minutes from midnight
 export function timeToMinutes(time: string): number {
@@ -255,7 +256,7 @@ export function calculateStats(activities: Activity[]) {
  */
 export function createActivity(name: string = '', length: number = 30): Activity {
   return {
-    id: crypto.randomUUID(),
+    id: generateId(),
     name,
     length,
     actLen: length,
