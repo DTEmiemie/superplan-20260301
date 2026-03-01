@@ -257,23 +257,23 @@ export function ScheduleToolbar({
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end" className="w-48">
-                  <DropdownMenuItem onClick={() => requestAnimationFrame(onDuplicateSchedule)}>
+                  <DropdownMenuItem onClick={() => setTimeout(onDuplicateSchedule, 150)}>
                     <Copy className="h-4 w-4 mr-2" />
                     Duplicate
                   </DropdownMenuItem>
-                  <DropdownMenuItem onClick={onAdjustSchedule}>
+                  <DropdownMenuItem onClick={() => setTimeout(onAdjustSchedule, 150)}>
                     <SlidersHorizontal className="h-4 w-4 mr-2" />
                     Adjust Schedule
                   </DropdownMenuItem>
-                  <DropdownMenuItem onClick={onResetSchedule}>
+                  <DropdownMenuItem onClick={() => setTimeout(onResetSchedule, 150)}>
                     <RotateCcw className="h-4 w-4 mr-2" />
                     Reset
                   </DropdownMenuItem>
-                  <DropdownMenuItem onClick={onShowStats}>
+                  <DropdownMenuItem onClick={() => setTimeout(onShowStats, 150)}>
                     <BarChart3 className="h-4 w-4 mr-2" />
                     Statistics
                   </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => requestAnimationFrame(onDeleteSchedule)} className="text-red-500">
+                  <DropdownMenuItem onClick={() => setTimeout(onDeleteSchedule, 150)} className="text-red-500">
                     <Trash2 className="h-4 w-4 mr-2" />
                     Delete
                   </DropdownMenuItem>
