@@ -78,7 +78,7 @@ export function StatsPanel({ activities }: StatsPanelProps) {
         <Card>
           <CardHeader className="pb-1 sm:pb-2 px-3 sm:px-6 pt-3 sm:pt-6">
             <CardTitle className="text-xs sm:text-sm font-medium text-muted-foreground">
-              Efficiency
+              Completion
             </CardTitle>
           </CardHeader>
           <CardContent className="px-3 sm:px-6 pb-3 sm:pb-6">
@@ -89,7 +89,7 @@ export function StatsPanel({ activities }: StatsPanelProps) {
               </span>
             </div>
             <p className="text-[10px] sm:text-xs text-muted-foreground mt-1">
-              Schedule adherence
+              Tasks completed
             </p>
           </CardContent>
         </Card>

@@ -76,19 +76,22 @@ export function useNotifications(
     }
 
     const now = new Date();
-    const currentMinutes = now.getHours() * 60 + now.getMinutes();
+    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
 
     // Find active activity
     const activeActivity = activities.find((a) => a.isActive);
-    
+
     if (activeActivity) {
       const startMinutes = timeToMinutes(activeActivity.start);
       const endMinutes = startMinutes + activeActivity.actLen;
       const alarmMinutes = endMinutes - settings.notifications.minutesBefore;
 
+      // Calculate precise delay using millisecond timestamps
+      const alarmTime = todayStart.getTime() + alarmMinutes * 60 * 1000;
+      const delayMs = alarmTime - now.getTime();
+
       // Only set alarm if it's in the future
-      if (alarmMinutes > currentMinutes) {
-        const delayMs = (alarmMinutes - currentMinutes) * 60 * 1000;
+      if (delayMs > 0) {
         
         const timeout = window.setTimeout(() => {
           showNotification(activeActivity);

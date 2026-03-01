@@ -193,22 +193,16 @@ function App() {
 
   const handleBeginActivity = useCallback(
     (index: number) => {
-      if (!currentSchedule) return;
-
-      const updatedActivities = beginActivity(
-        currentSchedule.activities,
-        index,
-        currentSchedule.totalHours
-      );
-
       setCurrentSchedule((prev) => {
         if (!prev) return null;
+        const updatedActivities = beginActivity(prev.activities, index, prev.totalHours);
+        const activity = updatedActivities[index];
+        if (activity) {
+          toast.success(`Started: ${activity.name}`, {
+            description: `Allocated ${activity.actLen} minutes`,
+          });
+        }
         return { ...prev, activities: updatedActivities };
-      });
-
-      const activity = updatedActivities[index];
-      toast.success(`Started: ${activity.name}`, {
-        description: `Allocated ${activity.actLen} minutes`,
       });
 
       // Request notification permission if needed
@@ -216,7 +210,7 @@ function App() {
         requestPermission();
       }
     },
-    [currentSchedule, settings.notifications.enabled, requestPermission]
+    [settings.notifications.enabled, requestPermission]
   );
 
   const handleToggleFixed = useCallback((index: number) => {
@@ -263,7 +257,6 @@ function App() {
   }, []);
 
   const handleDeleteActivity = useCallback((index: number) => {
-    let deleted = false;
     setCurrentSchedule((prev) => {
       if (!prev) return null;
 
@@ -273,28 +266,38 @@ function App() {
         return prev;
       }
 
-      deleted = true;
+      // Prevent deleting anchors
+      if (index === 0 || index === prev.activities.length - 1) {
+        toast.error('Cannot delete anchor activities');
+        return prev;
+      }
+
       const activities = [...prev.activities];
       activities.splice(index, 1);
+      toast.success('Activity deleted');
       return { ...prev, activities };
     });
-    if (deleted) {
-      toast.success('Activity deleted');
-    }
   }, []);
 
   const handleSplitActivity = useCallback((index: number) => {
     setCurrentSchedule((prev) => {
       if (!prev) return null;
+
+      // Prevent splitting anchors
+      if (index === 0 || index === prev.activities.length - 1) {
+        return prev;
+      }
+
       const activities = [...prev.activities];
       const activity = activities[index];
-      const halfLength = Math.floor(activity.length / 2);
-      
+      const halfLength = Math.max(1, Math.floor(activity.length / 2));
+      const remainLength = Math.max(1, activity.length - halfLength);
+
       activities[index] = { ...activity, length: halfLength };
       activities.splice(index + 1, 0, {
-        ...createActivity(`${activity.name} (part 2)`, halfLength),
+        ...createActivity(`${activity.name} (part 2)`, remainLength),
       });
-      
+
       return { ...prev, activities };
     });
   }, []);

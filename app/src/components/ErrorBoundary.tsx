@@ -28,10 +28,7 @@ export class ErrorBoundary extends Component<Props, State> {
             {this.state.error?.message}
           </p>
           <button
-            onClick={() => {
-              this.setState({ hasError: false, error: null });
-              window.location.reload();
-            }}
+            onClick={() => window.location.reload()}
             style={{
               padding: '0.5rem 1.5rem',
               borderRadius: '0.375rem',

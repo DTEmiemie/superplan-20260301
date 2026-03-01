@@ -94,7 +94,7 @@ export function calculateSchedule(
     const nextFixedIndex = activitiesWithOpt.findIndex(
       (a, idx) => idx > i && a.isFixed && a.start
     );
-    
+
     if (nextFixedIndex !== -1) {
       const nextFixedStart = timeToMinutes(activitiesWithOpt[nextFixedIndex].start);
       availableTime = nextFixedStart - currentTime;
@@ -102,25 +102,27 @@ export function calculateSchedule(
       availableTime = scheduleEndMinutes - currentTime;
     }
 
-    // Calculate time needed for remaining activities
-    const remainingActivities = activitiesWithOpt.slice(i + 1);
-    const remainingRigidTime = remainingActivities
+    // Calculate time needed for remaining activities IN THIS SEGMENT only
+    // (up to next fixed activity, not beyond it)
+    const segmentEnd = nextFixedIndex !== -1 ? nextFixedIndex : activitiesWithOpt.length;
+    const remainingInSegment = activitiesWithOpt.slice(i + 1, segmentEnd);
+    const remainingRigidTime = remainingInSegment
       .filter((a) => a.isRigid)
       .reduce((sum, a) => sum + a.length, 0);
-    
+
     // Calculate flexible time available
     const flexibleTime = Math.max(0, availableTime - remainingRigidTime);
-    
+
     // Calculate actual length
     let actLen: number;
     if (activity.isRigid) {
       // Rigid activities keep their desired length
       actLen = Math.min(activity.length, availableTime);
     } else {
-      // Flexible activities get compressed proportionally
-      const remainingFlexible = [activity, ...remainingActivities.filter((a) => !a.isRigid)];
+      // Flexible activities get compressed proportionally within this segment
+      const remainingFlexible = [activity, ...remainingInSegment.filter((a) => !a.isRigid)];
       const totalFlexibleDesired = remainingFlexible.reduce((sum, a) => sum + a.length, 0);
-      
+
       if (totalFlexibleDesired > 0) {
         const ratio = flexibleTime / totalFlexibleDesired;
         actLen = Math.floor(activity.length * ratio);
@@ -133,10 +135,9 @@ export function calculateSchedule(
     actLen = Math.min(actLen, availableTime);
     actLen = Math.max(actLen, 0);
 
-    // Calculate delay and shift
+    // Calculate delay (positive = behind schedule) and optShift (positive = shifted later from optimum)
     const optStartMinutes = timeToMinutes(activity.optStart);
     const delay = currentTime - optStartMinutes;
-    const optShift = optStartMinutes - currentTime;
 
     // Calculate percent of optimum
     const percent = activity.optLen > 0 ? Math.round((actLen / activity.optLen) * 100) : 100;
@@ -146,7 +147,7 @@ export function calculateSchedule(
       start,
       actLen,
       delay,
-      optShift: -optShift,
+      optShift: delay,
       percent,
     });
 
@@ -277,19 +278,17 @@ export function createActivity(name: string = '', length: number = 30): Activity
 
 /**
  * Create anchor activities for a new schedule
- * First activity = start anchor (default current time, not fixed)
+ * First activity = start anchor (uses provided startTime, not fixed)
  * Last activity = end anchor (calculated from total hours)
  */
-export function createAnchorActivities(totalHours: number): Activity[] {
-  const now = new Date();
-  const currentTime = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
+export function createAnchorActivities(startTime: string, totalHours: number): Activity[] {
   const totalMinutes = totalHours * 60;
-  const endTime = addMinutes(currentTime, totalMinutes);
+  const endTime = addMinutes(startTime, totalMinutes);
 
   return [
     {
       ...createActivity('Start', 0),
-      start: currentTime,
+      start: startTime,
       actLen: 0,
       optLen: 0,
       isFixed: false, // Start anchor is not fixed by default
@@ -377,11 +376,14 @@ export function reorderActivity(
   const updatedActivities = [...activities];
   const [movedActivity] = updatedActivities.splice(fromIndex, 1);
 
+  // After removing, adjust toIndex if needed (splice shifted indices)
+  const adjustedToIndex = fromIndex < toIndex ? toIndex - 1 : toIndex;
+
   // Insert at new position
-  updatedActivities.splice(toIndex, 0, movedActivity);
+  updatedActivities.splice(adjustedToIndex, 0, movedActivity);
 
   // If moved to position 0 (before start anchor), inherit original start time
-  if (toIndex === 0) {
+  if (adjustedToIndex === 0) {
     updatedActivities[0] = {
       ...movedActivity,
       start: originalStartTime,
@@ -389,8 +391,8 @@ export function reorderActivity(
     };
   }
   // If moved to last position (after end anchor), use original end time
-  else if (toIndex === updatedActivities.length - 1) {
-    updatedActivities[toIndex] = {
+  else if (adjustedToIndex === updatedActivities.length - 1) {
+    updatedActivities[adjustedToIndex] = {
       ...movedActivity,
       start: originalEndTime,
       isFixed: false,

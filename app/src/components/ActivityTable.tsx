@@ -91,7 +91,7 @@ export function ActivityTable({
       if (col === 'name') {
         updates.name = value as string;
       } else if (col === 'length') {
-        updates.length = parseInt(value as string) || 0;
+        updates.length = Math.max(0, parseInt(value as string) || 0);
       } else if (col === 'start') {
         const newStartTime = value as string;
         const originalStart = activities[row]?.start;
@@ -166,7 +166,7 @@ export function ActivityTable({
             {activities.map((activity, index) => (
               <TableRow
                 key={activity.id}
-                draggable={!readOnly}
+                draggable={!readOnly && !isAnchor(index)}
                 onDragStart={() => handleDragStart(index)}
                 onDragOver={(e) => handleDragOver(e, index)}
                 onDragEnd={handleDragEnd}
@@ -411,9 +411,11 @@ export function ActivityTable({
                               <DropdownMenuSeparator />
                             </>
                           )}
-                          <DropdownMenuItem onClick={() => onInsertActivity?.(index + 1)}>
+                          <DropdownMenuItem onClick={() => onInsertActivity?.(
+                            index === activities.length - 1 ? index : index + 1
+                          )}>
                             <Plus className="h-4 w-4 mr-2" />
-                            Insert After
+                            {index === activities.length - 1 ? 'Insert Before' : 'Insert After'}
                           </DropdownMenuItem>
                           {!isAnchor(index) && (
                             <>

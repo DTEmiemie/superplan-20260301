@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import type { Schedule, AppSettings } from '@/types';
-import { createAnchorActivities } from '@/lib/scheduleEngine';
+import { createAnchorActivities, addMinutes } from '@/lib/scheduleEngine';
 import { generateId } from '@/lib/utils';
 
 const SCHEDULES_KEY = 'supermemo-plan-schedules';
@@ -129,7 +129,7 @@ export function useScheduleStorage() {
         date,
         totalHours: settings.defaultScheduleHours,
         startTime: settings.defaultStartTime,
-        activities: createAnchorActivities(settings.defaultScheduleHours),
+        activities: createAnchorActivities(settings.defaultStartTime, settings.defaultScheduleHours),
         createdAt: Date.now(),
         updatedAt: Date.now(),
       };
@@ -141,7 +141,14 @@ export function useScheduleStorage() {
   );
 
   const updateSettings = useCallback((newSettings: Partial<AppSettings>) => {
-    setSettings((prev) => ({ ...prev, ...newSettings }));
+    setSettings((prev) => ({
+      ...prev,
+      ...newSettings,
+      notifications: {
+        ...prev.notifications,
+        ...(newSettings.notifications || {}),
+      },
+    }));
   }, []);
 
   const duplicateSchedule = useCallback(
@@ -159,7 +166,11 @@ export function useScheduleStorage() {
           isCompleted: false,
           isActive: false,
           isFixed: i === original.activities.length - 1, // Only keep end anchor fixed
-          start: '00:00',
+          start: i === 0
+            ? original.startTime
+            : i === original.activities.length - 1
+              ? addMinutes(original.startTime, original.totalHours * 60)
+              : '00:00',
         })),
         createdAt: Date.now(),
         updatedAt: Date.now(),
