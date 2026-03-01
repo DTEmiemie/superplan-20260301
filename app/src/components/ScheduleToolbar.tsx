@@ -39,7 +39,7 @@ import {
   MoreHorizontal,
   Clock,
 } from 'lucide-react';
-import { useState } from 'react';
+import { useState, useRef, useCallback } from 'react';
 
 interface ScheduleToolbarProps {
   schedules: Schedule[];
@@ -73,6 +73,25 @@ export function ScheduleToolbar({
   onTotalHoursChange,
 }: ScheduleToolbarProps) {
   const [showSettings, setShowSettings] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const pendingActionRef = useRef<(() => void) | null>(null);
+
+  const handleMenuOpenChange = useCallback((open: boolean) => {
+    setMenuOpen(open);
+    if (!open && pendingActionRef.current) {
+      const action = pendingActionRef.current;
+      pendingActionRef.current = null;
+      // Execute after Radix fully unmounts the portal
+      setTimeout(action, 0);
+    }
+  }, []);
+
+  const menuAction = useCallback((action: () => void) => {
+    return () => {
+      pendingActionRef.current = action;
+      setMenuOpen(false);
+    };
+  }, []);
 
   const handleTotalHoursChange = (value: string) => {
     const hours = parseFloat(value);
@@ -250,30 +269,30 @@ export function ScheduleToolbar({
 
             {/* Mobile Actions Dropdown */}
             <div className="flex sm:hidden items-center gap-2 ml-auto">
-              <DropdownMenu>
+              <DropdownMenu open={menuOpen} onOpenChange={handleMenuOpenChange}>
                 <DropdownMenuTrigger asChild>
                   <Button variant="outline" size="sm" className="h-9 px-2">
                     <MoreHorizontal className="h-4 w-4" />
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end" className="w-48">
-                  <DropdownMenuItem onClick={() => setTimeout(onDuplicateSchedule, 150)}>
+                  <DropdownMenuItem onClick={menuAction(onDuplicateSchedule)}>
                     <Copy className="h-4 w-4 mr-2" />
                     Duplicate
                   </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => setTimeout(onAdjustSchedule, 150)}>
+                  <DropdownMenuItem onClick={menuAction(onAdjustSchedule)}>
                     <SlidersHorizontal className="h-4 w-4 mr-2" />
                     Adjust Schedule
                   </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => setTimeout(onResetSchedule, 150)}>
+                  <DropdownMenuItem onClick={menuAction(onResetSchedule)}>
                     <RotateCcw className="h-4 w-4 mr-2" />
                     Reset
                   </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => setTimeout(onShowStats, 150)}>
+                  <DropdownMenuItem onClick={menuAction(onShowStats)}>
                     <BarChart3 className="h-4 w-4 mr-2" />
                     Statistics
                   </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => setTimeout(onDeleteSchedule, 150)} className="text-red-500">
+                  <DropdownMenuItem onClick={menuAction(onDeleteSchedule)} className="text-red-500">
                     <Trash2 className="h-4 w-4 mr-2" />
                     Delete
                   </DropdownMenuItem>
