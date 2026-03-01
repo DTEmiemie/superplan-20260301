@@ -42,7 +42,7 @@ export function useScheduleStorage() {
         setSettings((prev) => ({
           ...prev,
           ...parsed,
-          notifications: { ...prev.notifications, ...parsed.notifications },
+          notifications: { ...prev.notifications, ...(parsed.notifications || {}) },
         }));
       }
       if (savedCurrent) {
@@ -76,9 +76,13 @@ export function useScheduleStorage() {
   }, [settings, isLoaded]);
 
   useEffect(() => {
-    if (isLoaded && currentScheduleId) {
+    if (isLoaded) {
       try {
-        localStorage.setItem(CURRENT_SCHEDULE_KEY, currentScheduleId);
+        if (currentScheduleId) {
+          localStorage.setItem(CURRENT_SCHEDULE_KEY, currentScheduleId);
+        } else {
+          localStorage.removeItem(CURRENT_SCHEDULE_KEY);
+        }
       } catch (error) {
         console.error('Error saving current schedule:', error);
       }
@@ -149,11 +153,12 @@ export function useScheduleStorage() {
         ...original,
         id: generateId(),
         date: newDate,
-        activities: original.activities.map((a) => ({
+        activities: original.activities.map((a, i) => ({
           ...a,
           id: generateId(),
           isCompleted: false,
           isActive: false,
+          isFixed: i === original.activities.length - 1, // Only keep end anchor fixed
           start: '00:00',
         })),
         createdAt: Date.now(),

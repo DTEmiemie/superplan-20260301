@@ -6,14 +6,16 @@ import { generateId } from '@/lib/utils';
 
 // Parse time string (HH:MM) to minutes from midnight
 export function timeToMinutes(time: string): number {
+  if (!time || !time.includes(':')) return 0;
   const [hours, minutes] = time.split(':').map(Number);
-  return hours * 60 + minutes;
+  return (isNaN(hours) ? 0 : hours) * 60 + (isNaN(minutes) ? 0 : minutes);
 }
 
 // Convert minutes to time string (HH:MM)
 export function minutesToTime(minutes: number): string {
-  const hours = Math.floor(minutes / 60) % 24;
-  const mins = Math.floor(minutes % 60);
+  const normalized = ((minutes % 1440) + 1440) % 1440; // Normalize to 0-1439
+  const hours = Math.floor(normalized / 60);
+  const mins = Math.floor(normalized % 60);
   return `${hours.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}`;
 }
 
@@ -368,31 +370,29 @@ export function reorderActivity(
   if (fromIndex < 0 || fromIndex >= activities.length) return activities;
   if (toIndex < 0 || toIndex > activities.length) return activities;
 
+  // Capture original anchor data BEFORE splice operations
+  const originalStartTime = activities[0].start;
+  const originalEndTime = activities[activities.length - 1].start;
+
   const updatedActivities = [...activities];
   const [movedActivity] = updatedActivities.splice(fromIndex, 1);
-  
+
   // Insert at new position
   updatedActivities.splice(toIndex, 0, movedActivity);
 
-  // Handle anchor inheritance
-  const startAnchor = updatedActivities[0];
-  const endAnchor = updatedActivities[updatedActivities.length - 1];
-
-  // If moved to position 0 (before start anchor), inherit start time
+  // If moved to position 0 (before start anchor), inherit original start time
   if (toIndex === 0) {
     updatedActivities[0] = {
       ...movedActivity,
-      start: startAnchor.start, // Inherit start anchor's time
-      isFixed: false, // Not fixed by default
+      start: originalStartTime,
+      isFixed: false,
     };
-    // The original start anchor becomes position 1
-    // Its start time will be recalculated by calculateSchedule
   }
-  // If moved to last position (after end anchor), use end anchor's time
+  // If moved to last position (after end anchor), use original end time
   else if (toIndex === updatedActivities.length - 1) {
     updatedActivities[toIndex] = {
       ...movedActivity,
-      start: endAnchor.start, // Use end anchor's time
+      start: originalEndTime,
       isFixed: false,
     };
   }

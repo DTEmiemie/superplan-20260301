@@ -263,20 +263,24 @@ function App() {
   }, []);
 
   const handleDeleteActivity = useCallback((index: number) => {
+    let deleted = false;
     setCurrentSchedule((prev) => {
       if (!prev) return null;
-      
+
       // Prevent deleting if only 2 activities left (must keep anchors)
       if (prev.activities.length <= 2) {
         toast.error('Cannot delete - must keep Start/End anchors');
         return prev;
       }
-      
+
+      deleted = true;
       const activities = [...prev.activities];
       activities.splice(index, 1);
       return { ...prev, activities };
     });
-    toast.success('Activity deleted');
+    if (deleted) {
+      toast.success('Activity deleted');
+    }
   }, []);
 
   const handleSplitActivity = useCallback((index: number) => {

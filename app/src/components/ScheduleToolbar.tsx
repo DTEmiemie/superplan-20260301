@@ -75,8 +75,9 @@ export function ScheduleToolbar({
   const [showSettings, setShowSettings] = useState(false);
 
   const handleTotalHoursChange = (value: string) => {
-    const hours = parseFloat(value) || 0;
-    onTotalHoursChange?.(hours);
+    const hours = parseFloat(value);
+    if (isNaN(hours) || hours < 0.5) return;
+    onTotalHoursChange?.(Math.min(hours, 24));
   };
 
   return (
@@ -85,7 +86,7 @@ export function ScheduleToolbar({
       <div className="flex flex-wrap items-center gap-2">
         {/* Schedule Selector */}
         <Select
-          value={currentSchedule?.id || ''}
+          value={currentSchedule?.id ?? undefined}
           onValueChange={onLoadSchedule}
         >
           <SelectTrigger className="w-full sm:w-48">
