@@ -19,22 +19,6 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog';
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
 import type { Schedule } from '@/types';
 import {
   Plus,
@@ -50,16 +34,6 @@ import {
   Clock,
 } from 'lucide-react';
 import { useEffect, useState, useCallback } from 'react';
-
-// Radix/shadcn overlays use exit animations; on some mobile browsers (Edge/Android)
-// deleting the schedule while portals are still animating out can trigger a React DOM
-// reconciliation crash: "Failed to execute 'insertBefore' ...".
-// Keep a small buffer beyond the CSS animation duration to avoid the boundary race.
-const MENU_PORTAL_UNMOUNT_TIMEOUT_MS = 800;
-const DIALOG_PORTAL_UNMOUNT_TIMEOUT_MS = 1200;
-
-const SCHEDULE_TOOLBAR_MENU_CONTENT_SELECTOR = '[data-schedule-toolbar-menu-content]';
-const SCHEDULE_DELETE_DIALOG_CONTENT_SELECTOR = '[data-schedule-delete-dialog-content]';
 
 interface ScheduleToolbarProps {
   schedules: Schedule[];
@@ -96,44 +70,13 @@ export function ScheduleToolbar({
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string } | null>(null);
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
-
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const [pendingMenuAction, setPendingMenuAction] = useState<
-    'duplicate' | 'adjust' | 'reset' | 'stats' | 'request-delete' | null
-  >(null);
-
-  const waitForElementToDisappear = useCallback((selector: string, timeoutMs: number) => {
-    if (typeof document === 'undefined') return Promise.resolve();
-    const start = Date.now();
-
-    return new Promise<void>((resolve) => {
-      const tick = () => {
-        const stillThere = document.querySelector(selector);
-        if (!stillThere) return resolve();
-        if (Date.now() - start > timeoutMs) return resolve();
-        requestAnimationFrame(tick);
-      };
-      tick();
-    });
-  }, []);
 
   const handleTotalHoursChange = (value: string) => {
     const hours = parseFloat(value);
     if (isNaN(hours) || hours < 0.5) return;
     onTotalHoursChange?.(Math.min(hours, 24));
   };
-
-  const handleDeleteDialogOpenChange = useCallback(
-    (open: boolean) => {
-      setShowDeleteConfirm(open);
-      // If user cancels/closes the dialog, clear the target.
-      // If we're confirming delete, keep the target until the portal is fully removed.
-      if (!open && pendingDeleteId === null) {
-        setDeleteTarget(null);
-      }
-    },
-    [pendingDeleteId]
-  );
 
   // Request delete — open confirmation dialog
   const requestDelete = useCallback(() => {
@@ -142,108 +85,84 @@ export function ScheduleToolbar({
     setShowDeleteConfirm(true);
   }, [currentSchedule]);
 
+  const cancelDelete = useCallback(() => {
+    setShowDeleteConfirm(false);
+    if (pendingDeleteId === null) {
+      setDeleteTarget(null);
+    }
+  }, [pendingDeleteId]);
+
   const handleConfirmDelete = useCallback(() => {
     if (!deleteTarget) return;
     setPendingDeleteId(deleteTarget.id);
     setShowDeleteConfirm(false);
   }, [deleteTarget]);
 
-  // Run the pending mobile-menu action only after the DropdownMenu portal fully unmounts.
-  useEffect(() => {
-    if (!pendingMenuAction) return;
-    if (mobileMenuOpen) return;
-
-    let cancelled = false;
-    (async () => {
-      await waitForElementToDisappear(
-        SCHEDULE_TOOLBAR_MENU_CONTENT_SELECTOR,
-        MENU_PORTAL_UNMOUNT_TIMEOUT_MS
-      );
-      if (cancelled) return;
-
-      switch (pendingMenuAction) {
-        case 'duplicate':
-          onDuplicateSchedule();
-          break;
-        case 'adjust':
-          onAdjustSchedule();
-          break;
-        case 'reset':
-          onResetSchedule();
-          break;
-        case 'stats':
-          onShowStats();
-          break;
-        case 'request-delete':
-          requestDelete();
-          break;
-      }
-
-      setPendingMenuAction(null);
-    })();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [
-    pendingMenuAction,
-    mobileMenuOpen,
-    waitForElementToDisappear,
-    onDuplicateSchedule,
-    onAdjustSchedule,
-    onResetSchedule,
-    onShowStats,
-    requestDelete,
-  ]);
-
-  // Perform the actual schedule deletion only after the AlertDialog portal unmounts.
+  // Perform the actual schedule deletion after the confirmation dialog is closed.
   useEffect(() => {
     if (!pendingDeleteId) return;
     if (showDeleteConfirm) return;
 
-    let cancelled = false;
-    (async () => {
-      await waitForElementToDisappear(
-        SCHEDULE_DELETE_DIALOG_CONTENT_SELECTOR,
-        DIALOG_PORTAL_UNMOUNT_TIMEOUT_MS
-      );
-      if (cancelled) return;
+    onDeleteSchedule(pendingDeleteId);
+    setPendingDeleteId(null);
+    setDeleteTarget(null);
+  }, [pendingDeleteId, showDeleteConfirm, onDeleteSchedule]);
 
-      onDeleteSchedule(pendingDeleteId);
-      setPendingDeleteId(null);
-      setDeleteTarget(null);
-    })();
+  // Close overlays on Escape.
+  useEffect(() => {
+    if (!mobileMenuOpen && !showDeleteConfirm) return;
 
-    return () => {
-      cancelled = true;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      setMobileMenuOpen(false);
+      cancelDelete();
     };
-  }, [pendingDeleteId, showDeleteConfirm, waitForElementToDisappear, onDeleteSchedule]);
+
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [mobileMenuOpen, showDeleteConfirm, cancelDelete]);
+
+  const runMobileAction = useCallback(
+    (action: () => void) => {
+      setMobileMenuOpen(false);
+      // Defer to the next task so the menu unmounts before running actions.
+      setTimeout(action, 0);
+    },
+    []
+  );
 
   return (
     <div className="flex flex-col gap-3 p-3 sm:p-4 bg-muted/50 rounded-lg">
-      {/* Delete Confirmation Dialog */}
-      <AlertDialog open={showDeleteConfirm} onOpenChange={handleDeleteDialogOpenChange}>
-        <AlertDialogContent
-          className="max-w-sm"
-          data-schedule-delete-dialog-content=""
-        >
-          <AlertDialogHeader>
-            <AlertDialogTitle>Delete Schedule</AlertDialogTitle>
-            <AlertDialogDescription>
-              Are you sure you want to delete &quot;{deleteTarget?.name}&quot;? This action cannot be undone.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={handleConfirmDelete}
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-            >
-              Delete
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      {/* Delete Confirmation Dialog (non-portal, mobile-safe) */}
+      {showDeleteConfirm && (
+        <div className="fixed inset-0 z-50">
+          <div
+            className="fixed inset-0 bg-black/50"
+            onMouseDown={cancelDelete}
+            onTouchStart={cancelDelete}
+          />
+          <div
+            role="alertdialog"
+            aria-modal="true"
+            className="bg-background fixed top-[50%] left-[50%] z-50 grid w-full max-w-[calc(100%-2rem)] translate-x-[-50%] translate-y-[-50%] gap-4 rounded-lg border p-6 shadow-lg sm:max-w-sm"
+          >
+            <div className="flex flex-col gap-2 text-center sm:text-left">
+              <h2 className="text-lg font-semibold">Delete Schedule</h2>
+              <p className="text-muted-foreground text-sm">
+                Are you sure you want to delete &quot;{deleteTarget?.name}&quot;? This action cannot be undone.
+              </p>
+            </div>
+            <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+              <Button variant="outline" onClick={cancelDelete}>
+                Cancel
+              </Button>
+              <Button variant="destructive" onClick={handleConfirmDelete}>
+                Delete
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Top Row - Schedule Selector & Primary Actions */}
       <div className="flex flex-wrap items-center gap-2">
@@ -418,42 +337,78 @@ export function ScheduleToolbar({
 
             {/* Mobile Actions Dropdown */}
             <div className="flex sm:hidden items-center gap-2 ml-auto">
-              <DropdownMenu onOpenChange={setMobileMenuOpen}>
-                <DropdownMenuTrigger asChild>
-                  <Button variant="outline" size="sm" className="h-9 px-2">
-                    <MoreHorizontal className="h-4 w-4" />
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent
-                  align="end"
-                  className="w-48"
-                  data-schedule-toolbar-menu-content=""
+              <div className="relative">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-9 px-2 relative z-50"
+                  aria-haspopup="menu"
+                  aria-expanded={mobileMenuOpen}
+                  onClick={() => setMobileMenuOpen((prev) => !prev)}
                 >
-                  <DropdownMenuItem onSelect={() => setPendingMenuAction('duplicate')}>
-                    <Copy className="h-4 w-4 mr-2" />
-                    Duplicate
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onSelect={() => setPendingMenuAction('adjust')}>
-                    <SlidersHorizontal className="h-4 w-4 mr-2" />
-                    Adjust Schedule
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onSelect={() => setPendingMenuAction('reset')}>
-                    <RotateCcw className="h-4 w-4 mr-2" />
-                    Reset
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onSelect={() => setPendingMenuAction('stats')}>
-                    <BarChart3 className="h-4 w-4 mr-2" />
-                    Statistics
-                  </DropdownMenuItem>
-                  <DropdownMenuItem
-                    onSelect={() => setPendingMenuAction('request-delete')}
-                    className="text-red-500"
-                  >
-                    <Trash2 className="h-4 w-4 mr-2" />
-                    Delete
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
+                  <MoreHorizontal className="h-4 w-4" />
+                </Button>
+
+                {mobileMenuOpen && (
+                  <>
+                    <div
+                      className="fixed inset-0 z-40"
+                      onMouseDown={() => setMobileMenuOpen(false)}
+                      onTouchStart={() => setMobileMenuOpen(false)}
+                    />
+                    <div
+                      role="menu"
+                      className="bg-popover text-popover-foreground absolute right-0 top-full mt-1 z-50 w-48 overflow-hidden rounded-md border p-1 shadow-md"
+                    >
+                      <button
+                        type="button"
+                        role="menuitem"
+                        className="hover:bg-accent hover:text-accent-foreground focus:bg-accent focus:text-accent-foreground relative flex w-full cursor-default items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-none select-none"
+                        onClick={() => runMobileAction(onDuplicateSchedule)}
+                      >
+                        <Copy className="h-4 w-4" />
+                        Duplicate
+                      </button>
+                      <button
+                        type="button"
+                        role="menuitem"
+                        className="hover:bg-accent hover:text-accent-foreground focus:bg-accent focus:text-accent-foreground relative flex w-full cursor-default items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-none select-none"
+                        onClick={() => runMobileAction(onAdjustSchedule)}
+                      >
+                        <SlidersHorizontal className="h-4 w-4" />
+                        Adjust Schedule
+                      </button>
+                      <button
+                        type="button"
+                        role="menuitem"
+                        className="hover:bg-accent hover:text-accent-foreground focus:bg-accent focus:text-accent-foreground relative flex w-full cursor-default items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-none select-none"
+                        onClick={() => runMobileAction(onResetSchedule)}
+                      >
+                        <RotateCcw className="h-4 w-4" />
+                        Reset
+                      </button>
+                      <button
+                        type="button"
+                        role="menuitem"
+                        className="hover:bg-accent hover:text-accent-foreground focus:bg-accent focus:text-accent-foreground relative flex w-full cursor-default items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-none select-none"
+                        onClick={() => runMobileAction(onShowStats)}
+                      >
+                        <BarChart3 className="h-4 w-4" />
+                        Statistics
+                      </button>
+                      <button
+                        type="button"
+                        role="menuitem"
+                        className="hover:bg-accent hover:text-accent-foreground focus:bg-accent focus:text-accent-foreground text-red-500 relative flex w-full cursor-default items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-none select-none"
+                        onClick={() => runMobileAction(requestDelete)}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                        Delete
+                      </button>
+                    </div>
+                  </>
+                )}
+              </div>
             </div>
 
             {/* Settings Dialog */}
