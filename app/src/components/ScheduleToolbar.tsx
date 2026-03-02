@@ -85,11 +85,10 @@ export function ScheduleToolbar({
   const [showSettings, setShowSettings] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
-  // Mobile-safe menu action: use onSelect (fires before close) + setTimeout
+  // Mobile-safe menu action: let menu close naturally, run action after DOM cleanup
   const deferAction = useCallback((action: () => void) => {
-    return (e: Event) => {
-      e.preventDefault(); // Prevent Radix from closing before we schedule
-      setTimeout(action, 150); // Run after Radix DOM cleanup
+    return () => {
+      setTimeout(action, 150);
     };
   }, []);
 
