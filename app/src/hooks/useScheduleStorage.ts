@@ -90,6 +90,18 @@ export function useScheduleStorage() {
     }
   }, [currentScheduleId, isLoaded]);
 
+  // Auto-heal: if currentScheduleId is invalid, select the first schedule
+  useEffect(() => {
+    if (!isLoaded) return;
+    if (schedules.length === 0) {
+      if (currentScheduleId !== null) setCurrentScheduleId(null);
+      return;
+    }
+    if (!schedules.some((s) => s.id === currentScheduleId)) {
+      setCurrentScheduleId(schedules[0].id);
+    }
+  }, [isLoaded, schedules, currentScheduleId]);
+
   // Derive current schedule from schedules array (single source of truth)
   const currentSchedule = useMemo(() => {
     if (!currentScheduleId) return null;
@@ -135,21 +147,18 @@ export function useScheduleStorage() {
   // Delete schedule and auto-select next one
   const deleteSchedule = useCallback(
     (id: string) => {
-      setSchedules((prev) => {
-        const filtered = prev.filter((s) => s.id !== id);
-        // Auto-select another schedule after delete
-        if (currentScheduleId === id) {
-          const deletedIdx = prev.findIndex((s) => s.id === id);
-          // Try the schedule at the same index, then the one before
-          const nextSchedule =
-            filtered[deletedIdx] ?? filtered[deletedIdx - 1] ?? filtered[0] ?? null;
-          // Use setTimeout to avoid state update during render
-          setTimeout(() => setCurrentScheduleId(nextSchedule?.id ?? null), 0);
-        }
-        return filtered;
-      });
+      const currentIdx = schedules.findIndex((s) => s.id === id);
+      const remaining = schedules.filter((s) => s.id !== id);
+
+      setSchedules(remaining);
+
+      if (currentScheduleId === id) {
+        const nextSchedule =
+          remaining[currentIdx] ?? remaining[currentIdx - 1] ?? remaining[0] ?? null;
+        setCurrentScheduleId(nextSchedule?.id ?? null);
+      }
     },
-    [currentScheduleId]
+    [currentScheduleId, schedules]
   );
 
   const switchSchedule = useCallback(
