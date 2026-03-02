@@ -1,6 +1,6 @@
-// Local storage hook for schedules
+// Local storage hook for schedules - auto-save version
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import type { Schedule, AppSettings } from '@/types';
 import { createAnchorActivities, addMinutes } from '@/lib/scheduleEngine';
 import { generateId } from '@/lib/utils';
@@ -38,7 +38,6 @@ export function useScheduleStorage() {
       }
       if (savedSettings) {
         const parsed = JSON.parse(savedSettings);
-        // Merge with defaults to handle missing fields from older versions
         setSettings((prev) => ({
           ...prev,
           ...parsed,
@@ -54,7 +53,7 @@ export function useScheduleStorage() {
     setIsLoaded(true);
   }, []);
 
-  // Save to localStorage whenever data changes
+  // Auto-save schedules to localStorage
   useEffect(() => {
     if (isLoaded) {
       try {
@@ -65,6 +64,7 @@ export function useScheduleStorage() {
     }
   }, [schedules, isLoaded]);
 
+  // Auto-save settings
   useEffect(() => {
     if (isLoaded) {
       try {
@@ -75,6 +75,7 @@ export function useScheduleStorage() {
     }
   }, [settings, isLoaded]);
 
+  // Auto-save current schedule ID
   useEffect(() => {
     if (isLoaded) {
       try {
@@ -89,40 +90,31 @@ export function useScheduleStorage() {
     }
   }, [currentScheduleId, isLoaded]);
 
-  const saveSchedule = useCallback((schedule: Schedule) => {
-    setSchedules((prev) => {
-      const existingIndex = prev.findIndex((s) => s.id === schedule.id);
-      if (existingIndex >= 0) {
+  // Derive current schedule from schedules array (single source of truth)
+  const currentSchedule = useMemo(() => {
+    if (!currentScheduleId) return null;
+    return schedules.find((s) => s.id === currentScheduleId) ?? null;
+  }, [schedules, currentScheduleId]);
+
+  // Update the current schedule in-place (auto-saves via schedules effect)
+  const updateCurrentSchedule = useCallback(
+    (updater: (prev: Schedule) => Schedule) => {
+      setSchedules((prev) => {
+        const idx = prev.findIndex((s) => s.id === currentScheduleId);
+        if (idx < 0) return prev;
         const updated = [...prev];
-        updated[existingIndex] = { ...schedule, updatedAt: Date.now() };
+        updated[idx] = { ...updater(prev[idx]), updatedAt: Date.now() };
         return updated;
-      }
-      return [...prev, { ...schedule, updatedAt: Date.now() }];
-    });
-    setCurrentScheduleId(schedule.id);
-  }, []);
-
-  const deleteSchedule = useCallback((id: string) => {
-    setSchedules((prev) => prev.filter((s) => s.id !== id));
-    if (currentScheduleId === id) {
-      setCurrentScheduleId(null);
-    }
-  }, [currentScheduleId]);
-
-  const getSchedule = useCallback(
-    (id: string): Schedule | undefined => {
-      return schedules.find((s) => s.id === id);
+      });
     },
-    [schedules]
+    [currentScheduleId]
   );
 
-  const getCurrentSchedule = useCallback((): Schedule | undefined => {
-    if (!currentScheduleId) return undefined;
-    return schedules.find((s) => s.id === currentScheduleId);
-  }, [currentScheduleId, schedules]);
-
+  // Create new schedule with unique name
   const createNewSchedule = useCallback(
-    (name: string, date: string = new Date().toISOString().split('T')[0]): Schedule => {
+    (baseName?: string): Schedule => {
+      const date = new Date().toISOString().split('T')[0];
+      const name = baseName ?? generateScheduleName(schedules, date);
       const newSchedule: Schedule = {
         id: generateId(),
         name,
@@ -137,7 +129,71 @@ export function useScheduleStorage() {
       setCurrentScheduleId(newSchedule.id);
       return newSchedule;
     },
-    [settings]
+    [settings, schedules]
+  );
+
+  // Delete schedule and auto-select next one
+  const deleteSchedule = useCallback(
+    (id: string) => {
+      setSchedules((prev) => {
+        const filtered = prev.filter((s) => s.id !== id);
+        // Auto-select another schedule after delete
+        if (currentScheduleId === id) {
+          const deletedIdx = prev.findIndex((s) => s.id === id);
+          // Try the schedule at the same index, then the one before
+          const nextSchedule =
+            filtered[deletedIdx] ?? filtered[deletedIdx - 1] ?? filtered[0] ?? null;
+          // Use setTimeout to avoid state update during render
+          setTimeout(() => setCurrentScheduleId(nextSchedule?.id ?? null), 0);
+        }
+        return filtered;
+      });
+    },
+    [currentScheduleId]
+  );
+
+  const switchSchedule = useCallback(
+    (id: string) => {
+      const exists = schedules.some((s) => s.id === id);
+      if (exists) {
+        setCurrentScheduleId(id);
+      }
+    },
+    [schedules]
+  );
+
+  const duplicateSchedule = useCallback(
+    (scheduleId: string, newDate: string): Schedule | null => {
+      const original = schedules.find((s) => s.id === scheduleId);
+      if (!original) return null;
+
+      const duplicated: Schedule = {
+        ...original,
+        id: generateId(),
+        name: `${original.name} (copy)`,
+        date: newDate,
+        activities: original.activities.map((a, i) => ({
+          ...a,
+          id: generateId(),
+          isCompleted: false,
+          isActive: false,
+          isFixed: i === original.activities.length - 1,
+          start:
+            i === 0
+              ? original.startTime
+              : i === original.activities.length - 1
+                ? addMinutes(original.startTime, original.totalHours * 60)
+                : '00:00',
+        })),
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      };
+
+      setSchedules((prev) => [...prev, duplicated]);
+      setCurrentScheduleId(duplicated.id);
+      return duplicated;
+    },
+    [schedules]
   );
 
   const updateSettings = useCallback((newSettings: Partial<AppSettings>) => {
@@ -151,50 +207,33 @@ export function useScheduleStorage() {
     }));
   }, []);
 
-  const duplicateSchedule = useCallback(
-    (scheduleId: string, newDate: string): Schedule | null => {
-      const original = getSchedule(scheduleId);
-      if (!original) return null;
-
-      const duplicated: Schedule = {
-        ...original,
-        id: generateId(),
-        date: newDate,
-        activities: original.activities.map((a, i) => ({
-          ...a,
-          id: generateId(),
-          isCompleted: false,
-          isActive: false,
-          isFixed: i === original.activities.length - 1, // Only keep end anchor fixed
-          start: i === 0
-            ? original.startTime
-            : i === original.activities.length - 1
-              ? addMinutes(original.startTime, original.totalHours * 60)
-              : '00:00',
-        })),
-        createdAt: Date.now(),
-        updatedAt: Date.now(),
-      };
-
-      setSchedules((prev) => [...prev, duplicated]);
-      setCurrentScheduleId(duplicated.id);
-      return duplicated;
-    },
-    [getSchedule]
-  );
-
   return {
     schedules,
     settings,
+    currentSchedule,
     currentScheduleId,
     isLoaded,
-    saveSchedule,
-    deleteSchedule,
-    getSchedule,
-    getCurrentSchedule,
     createNewSchedule,
-    updateSettings,
+    deleteSchedule,
+    switchSchedule,
     duplicateSchedule,
+    updateCurrentSchedule,
+    updateSettings,
     setCurrentScheduleId,
   };
+}
+
+// Generate a unique schedule name like "Plan 03-02", "Plan 03-02 (2)"
+function generateScheduleName(schedules: Schedule[], date: string): string {
+  const shortDate = date.slice(5); // "03-02"
+  const baseName = `Plan ${shortDate}`;
+  const existingNames = new Set(schedules.map((s) => s.name));
+
+  if (!existingNames.has(baseName)) return baseName;
+
+  let counter = 2;
+  while (existingNames.has(`${baseName} (${counter})`)) {
+    counter++;
+  }
+  return `${baseName} (${counter})`;
 }

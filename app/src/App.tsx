@@ -23,34 +23,22 @@ import type { Schedule } from '@/types';
 import { BarChart3, List, Settings, Clock } from 'lucide-react';
 
 function App() {
-  // Storage hooks
+  // Storage hook — currentSchedule is derived from schedules array (single source of truth)
   const {
     schedules,
     settings,
+    currentSchedule,
     isLoaded,
-    saveSchedule,
-    deleteSchedule,
-    getSchedule,
-    getCurrentSchedule,
     createNewSchedule,
-    updateSettings,
+    deleteSchedule,
+    switchSchedule,
     duplicateSchedule,
-    setCurrentScheduleId,
+    updateCurrentSchedule,
+    updateSettings,
   } = useScheduleStorage();
 
-  // Local state
-  const [currentSchedule, setCurrentSchedule] = useState<Schedule | null>(null);
+  // Calculated activities (derived from currentSchedule)
   const [calculatedActivities, setCalculatedActivities] = useState<Schedule['activities']>([]);
-
-  // Initialize current schedule from storage
-  useEffect(() => {
-    if (isLoaded) {
-      const saved = getCurrentSchedule();
-      if (saved) {
-        setCurrentSchedule(saved);
-      }
-    }
-  }, [isLoaded, getCurrentSchedule]);
 
   // Recalculate schedule when activities change
   useEffect(() => {
@@ -89,29 +77,22 @@ function App() {
 
   // Schedule operations
   const handleNewSchedule = useCallback(() => {
-    const date = new Date().toISOString().split('T')[0];
-    const newSchedule = createNewSchedule(`Schedule ${date}`, date);
-    setCurrentSchedule(newSchedule);
-    toast.success('New schedule created with Start/End anchors');
+    createNewSchedule();
+    toast.success('New schedule created');
   }, [createNewSchedule]);
 
   const handleSaveSchedule = useCallback(() => {
     if (currentSchedule) {
-      saveSchedule(currentSchedule);
+      // Already auto-saved, just show confirmation
       toast.success('Schedule saved');
     }
-  }, [currentSchedule, saveSchedule]);
+  }, [currentSchedule]);
 
   const handleLoadSchedule = useCallback(
     (id: string) => {
-      const schedule = getSchedule(id);
-      if (schedule) {
-        setCurrentSchedule(schedule);
-        setCurrentScheduleId(id);
-        toast.success(`Loaded: ${schedule.name}`);
-      }
+      switchSchedule(id);
     },
-    [getSchedule, setCurrentScheduleId]
+    [switchSchedule]
   );
 
   const handleDuplicateSchedule = useCallback(() => {
@@ -119,10 +100,9 @@ function App() {
       const tomorrow = new Date();
       tomorrow.setDate(tomorrow.getDate() + 1);
       const newDate = tomorrow.toISOString().split('T')[0];
-      
+
       const duplicated = duplicateSchedule(currentSchedule.id, newDate);
       if (duplicated) {
-        setCurrentSchedule(duplicated);
         toast.success('Schedule duplicated for tomorrow');
       }
     }
@@ -131,220 +111,202 @@ function App() {
   const handleDeleteSchedule = useCallback(() => {
     if (currentSchedule) {
       deleteSchedule(currentSchedule.id);
-      setCurrentSchedule(null);
       toast.success('Schedule deleted');
     }
   }, [currentSchedule, deleteSchedule]);
 
-  const handleUpdateSchedule = useCallback((updates: Partial<Schedule>) => {
-    setCurrentSchedule((prev) => {
-      if (!prev) return null;
-      return { ...prev, ...updates };
-    });
-  }, []);
+  const handleUpdateSchedule = useCallback(
+    (updates: Partial<Schedule>) => {
+      updateCurrentSchedule((prev) => ({ ...prev, ...updates }));
+    },
+    [updateCurrentSchedule]
+  );
 
   // Handle total hours change - updates end anchor
-  const handleTotalHoursChange = useCallback((hours: number) => {
-    setCurrentSchedule((prev) => {
-      if (!prev) return null;
-      
-      // Update total hours
-      const updatedSchedule = { ...prev, totalHours: hours };
-      
-      // Update anchor activities
-      const updatedActivities = updateAnchorActivities(prev.activities, hours);
-      
-      return { ...updatedSchedule, activities: updatedActivities };
-    });
-  }, []);
+  const handleTotalHoursChange = useCallback(
+    (hours: number) => {
+      updateCurrentSchedule((prev) => {
+        const updatedActivities = updateAnchorActivities(prev.activities, hours);
+        return { ...prev, totalHours: hours, activities: updatedActivities };
+      });
+    },
+    [updateCurrentSchedule]
+  );
 
   // Activity operations
   const handleAddActivity = useCallback(() => {
-    setCurrentSchedule((prev) => {
-      if (!prev) return null;
-      // Insert before the last activity (end anchor)
+    updateCurrentSchedule((prev) => {
       const insertIndex = prev.activities.length - 1;
       const updatedActivities = insertActivity(prev.activities, insertIndex);
       return { ...prev, activities: updatedActivities };
     });
     toast.success('Activity added');
-  }, []);
+  }, [updateCurrentSchedule]);
 
-  const handleInsertActivity = useCallback((index: number) => {
-    setCurrentSchedule((prev) => {
-      if (!prev) return null;
-      const updatedActivities = insertActivity(prev.activities, index);
-      return { ...prev, activities: updatedActivities };
-    });
-    toast.success('Activity inserted');
-  }, []);
+  const handleInsertActivity = useCallback(
+    (index: number) => {
+      updateCurrentSchedule((prev) => {
+        const updatedActivities = insertActivity(prev.activities, index);
+        return { ...prev, activities: updatedActivities };
+      });
+      toast.success('Activity inserted');
+    },
+    [updateCurrentSchedule]
+  );
 
   const handleUpdateActivity = useCallback(
     (index: number, updates: Partial<Schedule['activities'][0]>) => {
-      setCurrentSchedule((prev) => {
-        if (!prev) return null;
+      updateCurrentSchedule((prev) => {
         const updatedActivities = [...prev.activities];
         updatedActivities[index] = { ...updatedActivities[index], ...updates };
         return { ...prev, activities: updatedActivities };
       });
     },
-    []
+    [updateCurrentSchedule]
   );
 
   const handleBeginActivity = useCallback(
     (index: number) => {
-      setCurrentSchedule((prev) => {
-        if (!prev) return null;
+      updateCurrentSchedule((prev) => {
         const updatedActivities = beginActivity(prev.activities, index, prev.totalHours);
         const activity = updatedActivities[index];
         if (activity) {
-          toast.success(`Started: ${activity.name}`, {
-            description: `Allocated ${activity.actLen} minutes`,
-          });
+          // Use setTimeout to avoid toast during render
+          setTimeout(() => {
+            toast.success(`Started: ${activity.name}`, {
+              description: `Allocated ${activity.actLen} minutes`,
+            });
+          }, 0);
         }
         return { ...prev, activities: updatedActivities };
       });
 
-      // Request notification permission if needed
       if (settings.notifications.enabled) {
         requestPermission();
       }
     },
-    [settings.notifications.enabled, requestPermission]
+    [updateCurrentSchedule, settings.notifications.enabled, requestPermission]
   );
 
-  const handleToggleFixed = useCallback((index: number) => {
-    setCurrentSchedule((prev) => {
-      if (!prev) return null;
-      const updatedActivities = [...prev.activities];
-      const activity = updatedActivities[index];
-      
-      // If it's the last activity (End anchor), always keep it fixed
-      if (index === prev.activities.length - 1) {
-        toast.info('End anchor must remain fixed');
-        return prev;
-      }
-      
-      updatedActivities[index] = {
-        ...activity,
-        isFixed: !activity.isFixed,
-      };
-      return { ...prev, activities: updatedActivities };
-    });
-  }, []);
-
-  const handleToggleRigid = useCallback((index: number) => {
-    setCurrentSchedule((prev) => {
-      if (!prev) return null;
-      const updatedActivities = [...prev.activities];
-      updatedActivities[index] = {
-        ...updatedActivities[index],
-        isRigid: !updatedActivities[index].isRigid,
-      };
-      return { ...prev, activities: updatedActivities };
-    });
-  }, []);
-
-  const handleReorderActivities = useCallback((fromIndex: number, toIndex: number) => {
-    setCurrentSchedule((prev) => {
-      if (!prev) return null;
-      
-      // Allow reordering to any position, including before start and after end
-      // The reorderActivity function handles anchor inheritance
-      const updatedActivities = reorderActivity(prev.activities, fromIndex, toIndex);
-      return { ...prev, activities: updatedActivities };
-    });
-  }, []);
-
-  const handleDeleteActivity = useCallback((index: number) => {
-    setCurrentSchedule((prev) => {
-      if (!prev) return null;
-
-      // Prevent deleting if only 2 activities left (must keep anchors)
-      if (prev.activities.length <= 2) {
-        toast.error('Cannot delete - must keep Start/End anchors');
-        return prev;
-      }
-
-      // Prevent deleting anchors
-      if (index === 0 || index === prev.activities.length - 1) {
-        toast.error('Cannot delete anchor activities');
-        return prev;
-      }
-
-      const activities = [...prev.activities];
-      activities.splice(index, 1);
-      toast.success('Activity deleted');
-      return { ...prev, activities };
-    });
-  }, []);
-
-  const handleSplitActivity = useCallback((index: number) => {
-    setCurrentSchedule((prev) => {
-      if (!prev) return null;
-
-      // Prevent splitting anchors
-      if (index === 0 || index === prev.activities.length - 1) {
-        return prev;
-      }
-
-      const activities = [...prev.activities];
-      const activity = activities[index];
-      const halfLength = Math.max(1, Math.floor(activity.length / 2));
-      const remainLength = Math.max(1, activity.length - halfLength);
-
-      activities[index] = { ...activity, length: halfLength };
-      activities.splice(index + 1, 0, {
-        ...createActivity(`${activity.name} (part 2)`, remainLength),
+  const handleToggleFixed = useCallback(
+    (index: number) => {
+      updateCurrentSchedule((prev) => {
+        if (index === prev.activities.length - 1) {
+          setTimeout(() => toast.info('End anchor must remain fixed'), 0);
+          return prev;
+        }
+        const updatedActivities = [...prev.activities];
+        updatedActivities[index] = {
+          ...updatedActivities[index],
+          isFixed: !updatedActivities[index].isFixed,
+        };
+        return { ...prev, activities: updatedActivities };
       });
+    },
+    [updateCurrentSchedule]
+  );
 
-      return { ...prev, activities };
-    });
-  }, []);
+  const handleToggleRigid = useCallback(
+    (index: number) => {
+      updateCurrentSchedule((prev) => {
+        const updatedActivities = [...prev.activities];
+        updatedActivities[index] = {
+          ...updatedActivities[index],
+          isRigid: !updatedActivities[index].isRigid,
+        };
+        return { ...prev, activities: updatedActivities };
+      });
+    },
+    [updateCurrentSchedule]
+  );
+
+  const handleReorderActivities = useCallback(
+    (fromIndex: number, toIndex: number) => {
+      updateCurrentSchedule((prev) => {
+        const updatedActivities = reorderActivity(prev.activities, fromIndex, toIndex);
+        return { ...prev, activities: updatedActivities };
+      });
+    },
+    [updateCurrentSchedule]
+  );
+
+  const handleDeleteActivity = useCallback(
+    (index: number) => {
+      updateCurrentSchedule((prev) => {
+        if (prev.activities.length <= 2) {
+          setTimeout(() => toast.error('Cannot delete - must keep Start/End anchors'), 0);
+          return prev;
+        }
+        if (index === 0 || index === prev.activities.length - 1) {
+          setTimeout(() => toast.error('Cannot delete anchor activities'), 0);
+          return prev;
+        }
+        const activities = [...prev.activities];
+        activities.splice(index, 1);
+        setTimeout(() => toast.success('Activity deleted'), 0);
+        return { ...prev, activities };
+      });
+    },
+    [updateCurrentSchedule]
+  );
+
+  const handleSplitActivity = useCallback(
+    (index: number) => {
+      updateCurrentSchedule((prev) => {
+        if (index === 0 || index === prev.activities.length - 1) {
+          return prev;
+        }
+        const activities = [...prev.activities];
+        const activity = activities[index];
+        const halfLength = Math.max(1, Math.floor(activity.length / 2));
+        const remainLength = Math.max(1, activity.length - halfLength);
+
+        activities[index] = { ...activity, length: halfLength };
+        activities.splice(index + 1, 0, {
+          ...createActivity(`${activity.name} (part 2)`, remainLength),
+        });
+        return { ...prev, activities };
+      });
+    },
+    [updateCurrentSchedule]
+  );
 
   const handleAdjustSchedule = useCallback(() => {
-    setCurrentSchedule((prev) => {
-      if (!prev) return null;
-      return { ...prev, activities: adjustSchedule(prev.activities) };
-    });
+    updateCurrentSchedule((prev) => ({
+      ...prev,
+      activities: adjustSchedule(prev.activities),
+    }));
     toast.success('Schedule adjusted - ActLen copied to Length');
-  }, []);
+  }, [updateCurrentSchedule]);
 
   const handleResetSchedule = useCallback(() => {
-    setCurrentSchedule((prev) => {
-      if (!prev) return null;
-      return {
-        ...prev,
-        activities: prev.activities.map((a, i) => ({
-          ...a,
-          isCompleted: false,
-          isActive: false,
-          isFixed: i === prev.activities.length - 1, // Keep end anchor fixed
-        })),
-      };
-    });
+    updateCurrentSchedule((prev) => ({
+      ...prev,
+      activities: prev.activities.map((a, i) => ({
+        ...a,
+        isCompleted: false,
+        isActive: false,
+        isFixed: i === prev.activities.length - 1,
+      })),
+    }));
     toast.success('Schedule reset');
-  }, []);
+  }, [updateCurrentSchedule]);
 
   // Keyboard shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Ctrl/Cmd + S - Save
       if ((e.ctrlKey || e.metaKey) && e.key === 's') {
         e.preventDefault();
         handleSaveSchedule();
       }
-      // Ctrl/Cmd + N - New
       if ((e.ctrlKey || e.metaKey) && e.key === 'n') {
         e.preventDefault();
         handleNewSchedule();
       }
-      // Ctrl/Cmd + Enter - Add activity
       if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
         e.preventDefault();
         handleAddActivity();
       }
-      // Ins - Insert activity (like SuperMemo)
       if (e.key === 'Insert') {
         e.preventDefault();
         handleAddActivity();
@@ -423,8 +385,6 @@ function App() {
 
             {currentSchedule ? (
               <div className="space-y-3 sm:space-y-4">
-                {/* Schedule Info - Hidden (now in toolbar) */}
-
                 <ActivityTable
                   activities={calculatedActivities}
                   onUpdateActivity={handleUpdateActivity}

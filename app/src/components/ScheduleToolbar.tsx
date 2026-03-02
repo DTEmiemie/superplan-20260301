@@ -20,6 +20,16 @@ import {
   DialogTrigger,
 } from '@/components/ui/dialog';
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
+import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
@@ -73,6 +83,7 @@ export function ScheduleToolbar({
   onTotalHoursChange,
 }: ScheduleToolbarProps) {
   const [showSettings, setShowSettings] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const pendingActionRef = useRef<(() => void) | null>(null);
 
@@ -81,7 +92,6 @@ export function ScheduleToolbar({
     if (!open && pendingActionRef.current) {
       const action = pendingActionRef.current;
       pendingActionRef.current = null;
-      // Execute after Radix fully unmounts the portal
       setTimeout(action, 0);
     }
   }, []);
@@ -99,32 +109,69 @@ export function ScheduleToolbar({
     onTotalHoursChange?.(Math.min(hours, 24));
   };
 
+  const handleConfirmDelete = useCallback(() => {
+    setShowDeleteConfirm(false);
+    onDeleteSchedule();
+  }, [onDeleteSchedule]);
+
+  // Request delete — open confirmation dialog
+  const requestDelete = useCallback(() => {
+    setShowDeleteConfirm(true);
+  }, []);
+
   return (
     <div className="flex flex-col gap-3 p-3 sm:p-4 bg-muted/50 rounded-lg">
+      {/* Delete Confirmation Dialog */}
+      <AlertDialog open={showDeleteConfirm} onOpenChange={setShowDeleteConfirm}>
+        <AlertDialogContent className="max-w-sm">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Schedule</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete &quot;{currentSchedule?.name}&quot;? This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleConfirmDelete}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
       {/* Top Row - Schedule Selector & Primary Actions */}
       <div className="flex flex-wrap items-center gap-2">
         {/* Schedule Selector */}
-        <Select
-          value={currentSchedule?.id ?? ''}
-          onValueChange={onLoadSchedule}
-        >
-          <SelectTrigger className="w-full sm:w-48">
-            <SelectValue placeholder="Select schedule..." />
-          </SelectTrigger>
-          <SelectContent>
-            {schedules.map((schedule) => (
-              <SelectItem key={schedule.id} value={schedule.id}>
-                {schedule.name} ({schedule.date})
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        {schedules.length > 0 ? (
+          <Select
+            value={currentSchedule?.id ?? undefined}
+            onValueChange={onLoadSchedule}
+          >
+            <SelectTrigger className="w-full sm:w-48">
+              <SelectValue placeholder="Select schedule..." />
+            </SelectTrigger>
+            <SelectContent>
+              {schedules.map((schedule) => (
+                <SelectItem key={schedule.id} value={schedule.id}>
+                  {schedule.name} ({schedule.date})
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        ) : (
+          <div className="w-full sm:w-48 h-10 flex items-center px-3 text-sm text-muted-foreground border rounded-md">
+            No schedules yet
+          </div>
+        )}
 
         {/* Primary Actions - Always Visible */}
         <div className="flex items-center gap-2 ml-auto">
-          <Button 
-            variant="default" 
-            size="sm" 
+          <Button
+            variant="default"
+            size="sm"
             onClick={onNewSchedule}
             className="h-9 px-2 sm:px-3"
           >
@@ -132,9 +179,9 @@ export function ScheduleToolbar({
             <span className="hidden sm:inline">New</span>
           </Button>
 
-          <Button 
-            variant="outline" 
-            size="sm" 
+          <Button
+            variant="outline"
+            size="sm"
             onClick={onSaveSchedule}
             disabled={!currentSchedule}
             className="h-9 px-2 sm:px-3"
@@ -257,7 +304,7 @@ export function ScheduleToolbar({
               <Button
                 variant="outline"
                 size="sm"
-                onClick={onDeleteSchedule}
+                onClick={requestDelete}
                 disabled={!currentSchedule}
                 className="h-9 text-red-500 hover:text-red-600"
               >
@@ -291,7 +338,7 @@ export function ScheduleToolbar({
                     <BarChart3 className="h-4 w-4 mr-2" />
                     Statistics
                   </DropdownMenuItem>
-                  <DropdownMenuItem onClick={menuAction(onDeleteSchedule)} className="text-red-500">
+                  <DropdownMenuItem onClick={menuAction(requestDelete)} className="text-red-500">
                     <Trash2 className="h-4 w-4 mr-2" />
                     Delete
                   </DropdownMenuItem>
