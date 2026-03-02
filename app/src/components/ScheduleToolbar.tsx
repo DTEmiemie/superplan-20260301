@@ -4,6 +4,13 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import {
   Dialog,
   DialogContent,
   DialogDescription,
@@ -137,24 +144,28 @@ export function ScheduleToolbar({
 
       {/* Top Row - Schedule Selector & Primary Actions */}
       <div className="flex flex-wrap items-center gap-2">
-        {/* Schedule Selector - native select for mobile compatibility */}
-        <select
-          value={currentSchedule?.id ?? ''}
-          onChange={(e) => e.target.value && onLoadSchedule(e.target.value)}
-          className="w-full sm:w-48 h-10 px-3 text-sm border rounded-md bg-background"
-        >
-          {schedules.length === 0 && (
-            <option value="" disabled>No schedules yet</option>
-          )}
-          {schedules.length > 0 && !currentSchedule && (
-            <option value="" disabled>Select schedule...</option>
-          )}
-          {schedules.map((schedule) => (
-            <option key={schedule.id} value={schedule.id}>
-              {schedule.name} ({schedule.date})
-            </option>
-          ))}
-        </select>
+        {/* Schedule Selector */}
+        {currentSchedule && schedules.length > 0 ? (
+          <Select
+            value={currentSchedule.id}
+            onValueChange={onLoadSchedule}
+          >
+            <SelectTrigger className="w-full sm:w-48">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {schedules.map((schedule) => (
+                <SelectItem key={schedule.id} value={schedule.id}>
+                  {schedule.name} ({schedule.date})
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        ) : (
+          <div className="w-full sm:w-48 h-10 flex items-center px-3 text-sm text-muted-foreground border rounded-md">
+            No schedules yet
+          </div>
+        )}
 
         {/* Primary Actions - Always Visible */}
         <div className="flex items-center gap-2 ml-auto">
