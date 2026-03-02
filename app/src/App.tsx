@@ -108,12 +108,13 @@ function App() {
     }
   }, [currentSchedule, duplicateSchedule]);
 
-  const handleDeleteSchedule = useCallback(() => {
-    if (currentSchedule) {
-      deleteSchedule(currentSchedule.id);
+  const handleDeleteSchedule = useCallback(
+    (id: string) => {
+      deleteSchedule(id);
       toast.success('Schedule deleted');
-    }
-  }, [currentSchedule, deleteSchedule]);
+    },
+    [deleteSchedule]
+  );
 
   const handleUpdateSchedule = useCallback(
     (updates: Partial<Schedule>) => {

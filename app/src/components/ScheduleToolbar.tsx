@@ -49,14 +49,17 @@ import {
   MoreHorizontal,
   Clock,
 } from 'lucide-react';
-import { useState, useCallback } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 
 // Radix/shadcn overlays use exit animations; on some mobile browsers (Edge/Android)
 // deleting the schedule while portals are still animating out can trigger a React DOM
 // reconciliation crash: "Failed to execute 'insertBefore' ...".
 // Keep a small buffer beyond the CSS animation duration to avoid the boundary race.
-const MENU_ACTION_DELAY_MS = 200; // dropdown-menu default duration ~150ms
-const DIALOG_CLOSE_DELAY_MS = 320; // alert-dialog content duration-200 + buffer
+const MENU_PORTAL_UNMOUNT_TIMEOUT_MS = 800;
+const DIALOG_PORTAL_UNMOUNT_TIMEOUT_MS = 1200;
+
+const SCHEDULE_TOOLBAR_MENU_CONTENT_SELECTOR = '[data-schedule-toolbar-menu-content]';
+const SCHEDULE_DELETE_DIALOG_CONTENT_SELECTOR = '[data-schedule-delete-dialog-content]';
 
 interface ScheduleToolbarProps {
   schedules: Schedule[];
@@ -65,7 +68,7 @@ interface ScheduleToolbarProps {
   onSaveSchedule: () => void;
   onLoadSchedule: (id: string) => void;
   onDuplicateSchedule: () => void;
-  onDeleteSchedule: () => void;
+  onDeleteSchedule: (id: string) => void;
   onAdjustSchedule: () => void;
   onResetSchedule: () => void;
   onShowStats: () => void;
@@ -91,12 +94,27 @@ export function ScheduleToolbar({
 }: ScheduleToolbarProps) {
   const [showSettings, setShowSettings] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string } | null>(null);
+  const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
 
-  // Mobile-safe menu action: let menu close naturally, run action after DOM cleanup
-  const deferAction = useCallback((action: () => void) => {
-    return () => {
-      setTimeout(action, MENU_ACTION_DELAY_MS);
-    };
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [pendingMenuAction, setPendingMenuAction] = useState<
+    'duplicate' | 'adjust' | 'reset' | 'stats' | 'request-delete' | null
+  >(null);
+
+  const waitForElementToDisappear = useCallback((selector: string, timeoutMs: number) => {
+    if (typeof document === 'undefined') return Promise.resolve();
+    const start = Date.now();
+
+    return new Promise<void>((resolve) => {
+      const tick = () => {
+        const stillThere = document.querySelector(selector);
+        if (!stillThere) return resolve();
+        if (Date.now() - start > timeoutMs) return resolve();
+        requestAnimationFrame(tick);
+      };
+      tick();
+    });
   }, []);
 
   const handleTotalHoursChange = (value: string) => {
@@ -105,30 +123,114 @@ export function ScheduleToolbar({
     onTotalHoursChange?.(Math.min(hours, 24));
   };
 
-  const handleConfirmDelete = useCallback(() => {
-    setShowDeleteConfirm(false);
-    // Delay delete to let AlertDialog portal unmount cleanly,
-    // otherwise React DOM reconciliation crashes with insertBefore error on mobile
-    setTimeout(() => {
-      // Extra rAF to ensure the close animation has completed and the portal detached.
-      requestAnimationFrame(() => onDeleteSchedule());
-    }, DIALOG_CLOSE_DELAY_MS);
-  }, [onDeleteSchedule]);
+  const handleDeleteDialogOpenChange = useCallback(
+    (open: boolean) => {
+      setShowDeleteConfirm(open);
+      // If user cancels/closes the dialog, clear the target.
+      // If we're confirming delete, keep the target until the portal is fully removed.
+      if (!open && pendingDeleteId === null) {
+        setDeleteTarget(null);
+      }
+    },
+    [pendingDeleteId]
+  );
 
   // Request delete — open confirmation dialog
   const requestDelete = useCallback(() => {
+    if (!currentSchedule) return;
+    setDeleteTarget({ id: currentSchedule.id, name: currentSchedule.name });
     setShowDeleteConfirm(true);
-  }, []);
+  }, [currentSchedule]);
+
+  const handleConfirmDelete = useCallback(() => {
+    if (!deleteTarget) return;
+    setPendingDeleteId(deleteTarget.id);
+    setShowDeleteConfirm(false);
+  }, [deleteTarget]);
+
+  // Run the pending mobile-menu action only after the DropdownMenu portal fully unmounts.
+  useEffect(() => {
+    if (!pendingMenuAction) return;
+    if (mobileMenuOpen) return;
+
+    let cancelled = false;
+    (async () => {
+      await waitForElementToDisappear(
+        SCHEDULE_TOOLBAR_MENU_CONTENT_SELECTOR,
+        MENU_PORTAL_UNMOUNT_TIMEOUT_MS
+      );
+      if (cancelled) return;
+
+      switch (pendingMenuAction) {
+        case 'duplicate':
+          onDuplicateSchedule();
+          break;
+        case 'adjust':
+          onAdjustSchedule();
+          break;
+        case 'reset':
+          onResetSchedule();
+          break;
+        case 'stats':
+          onShowStats();
+          break;
+        case 'request-delete':
+          requestDelete();
+          break;
+      }
+
+      setPendingMenuAction(null);
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    pendingMenuAction,
+    mobileMenuOpen,
+    waitForElementToDisappear,
+    onDuplicateSchedule,
+    onAdjustSchedule,
+    onResetSchedule,
+    onShowStats,
+    requestDelete,
+  ]);
+
+  // Perform the actual schedule deletion only after the AlertDialog portal unmounts.
+  useEffect(() => {
+    if (!pendingDeleteId) return;
+    if (showDeleteConfirm) return;
+
+    let cancelled = false;
+    (async () => {
+      await waitForElementToDisappear(
+        SCHEDULE_DELETE_DIALOG_CONTENT_SELECTOR,
+        DIALOG_PORTAL_UNMOUNT_TIMEOUT_MS
+      );
+      if (cancelled) return;
+
+      onDeleteSchedule(pendingDeleteId);
+      setPendingDeleteId(null);
+      setDeleteTarget(null);
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [pendingDeleteId, showDeleteConfirm, waitForElementToDisappear, onDeleteSchedule]);
 
   return (
     <div className="flex flex-col gap-3 p-3 sm:p-4 bg-muted/50 rounded-lg">
       {/* Delete Confirmation Dialog */}
-      <AlertDialog open={showDeleteConfirm} onOpenChange={setShowDeleteConfirm}>
-        <AlertDialogContent className="max-w-sm">
+      <AlertDialog open={showDeleteConfirm} onOpenChange={handleDeleteDialogOpenChange}>
+        <AlertDialogContent
+          className="max-w-sm"
+          data-schedule-delete-dialog-content=""
+        >
           <AlertDialogHeader>
             <AlertDialogTitle>Delete Schedule</AlertDialogTitle>
             <AlertDialogDescription>
-              Are you sure you want to delete &quot;{currentSchedule?.name}&quot;? This action cannot be undone.
+              Are you sure you want to delete &quot;{deleteTarget?.name}&quot;? This action cannot be undone.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -316,30 +418,37 @@ export function ScheduleToolbar({
 
             {/* Mobile Actions Dropdown */}
             <div className="flex sm:hidden items-center gap-2 ml-auto">
-              <DropdownMenu>
+              <DropdownMenu onOpenChange={setMobileMenuOpen}>
                 <DropdownMenuTrigger asChild>
                   <Button variant="outline" size="sm" className="h-9 px-2">
                     <MoreHorizontal className="h-4 w-4" />
                   </Button>
                 </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-48">
-                  <DropdownMenuItem onSelect={deferAction(onDuplicateSchedule)}>
+                <DropdownMenuContent
+                  align="end"
+                  className="w-48"
+                  data-schedule-toolbar-menu-content=""
+                >
+                  <DropdownMenuItem onSelect={() => setPendingMenuAction('duplicate')}>
                     <Copy className="h-4 w-4 mr-2" />
                     Duplicate
                   </DropdownMenuItem>
-                  <DropdownMenuItem onSelect={deferAction(onAdjustSchedule)}>
+                  <DropdownMenuItem onSelect={() => setPendingMenuAction('adjust')}>
                     <SlidersHorizontal className="h-4 w-4 mr-2" />
                     Adjust Schedule
                   </DropdownMenuItem>
-                  <DropdownMenuItem onSelect={deferAction(onResetSchedule)}>
+                  <DropdownMenuItem onSelect={() => setPendingMenuAction('reset')}>
                     <RotateCcw className="h-4 w-4 mr-2" />
                     Reset
                   </DropdownMenuItem>
-                  <DropdownMenuItem onSelect={deferAction(onShowStats)}>
+                  <DropdownMenuItem onSelect={() => setPendingMenuAction('stats')}>
                     <BarChart3 className="h-4 w-4 mr-2" />
                     Statistics
                   </DropdownMenuItem>
-                  <DropdownMenuItem onSelect={deferAction(requestDelete)} className="text-red-500">
+                  <DropdownMenuItem
+                    onSelect={() => setPendingMenuAction('request-delete')}
+                    className="text-red-500"
+                  >
                     <Trash2 className="h-4 w-4 mr-2" />
                     Delete
                   </DropdownMenuItem>
