@@ -49,7 +49,7 @@ import {
   MoreHorizontal,
   Clock,
 } from 'lucide-react';
-import { useState, useRef, useCallback } from 'react';
+import { useState, useCallback } from 'react';
 
 interface ScheduleToolbarProps {
   schedules: Schedule[];
@@ -84,22 +84,12 @@ export function ScheduleToolbar({
 }: ScheduleToolbarProps) {
   const [showSettings, setShowSettings] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
-  const [menuOpen, setMenuOpen] = useState(false);
-  const pendingActionRef = useRef<(() => void) | null>(null);
 
-  const handleMenuOpenChange = useCallback((open: boolean) => {
-    setMenuOpen(open);
-    if (!open && pendingActionRef.current) {
-      const action = pendingActionRef.current;
-      pendingActionRef.current = null;
-      setTimeout(action, 0);
-    }
-  }, []);
-
-  const menuAction = useCallback((action: () => void) => {
-    return () => {
-      pendingActionRef.current = action;
-      setMenuOpen(false);
+  // Mobile-safe menu action: use onSelect (fires before close) + setTimeout
+  const deferAction = useCallback((action: () => void) => {
+    return (e: Event) => {
+      e.preventDefault(); // Prevent Radix from closing before we schedule
+      setTimeout(action, 150); // Run after Radix DOM cleanup
     };
   }, []);
 
@@ -315,30 +305,30 @@ export function ScheduleToolbar({
 
             {/* Mobile Actions Dropdown */}
             <div className="flex sm:hidden items-center gap-2 ml-auto">
-              <DropdownMenu open={menuOpen} onOpenChange={handleMenuOpenChange}>
+              <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button variant="outline" size="sm" className="h-9 px-2">
                     <MoreHorizontal className="h-4 w-4" />
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end" className="w-48">
-                  <DropdownMenuItem onClick={menuAction(onDuplicateSchedule)}>
+                  <DropdownMenuItem onSelect={deferAction(onDuplicateSchedule)}>
                     <Copy className="h-4 w-4 mr-2" />
                     Duplicate
                   </DropdownMenuItem>
-                  <DropdownMenuItem onClick={menuAction(onAdjustSchedule)}>
+                  <DropdownMenuItem onSelect={deferAction(onAdjustSchedule)}>
                     <SlidersHorizontal className="h-4 w-4 mr-2" />
                     Adjust Schedule
                   </DropdownMenuItem>
-                  <DropdownMenuItem onClick={menuAction(onResetSchedule)}>
+                  <DropdownMenuItem onSelect={deferAction(onResetSchedule)}>
                     <RotateCcw className="h-4 w-4 mr-2" />
                     Reset
                   </DropdownMenuItem>
-                  <DropdownMenuItem onClick={menuAction(onShowStats)}>
+                  <DropdownMenuItem onSelect={deferAction(onShowStats)}>
                     <BarChart3 className="h-4 w-4 mr-2" />
                     Statistics
                   </DropdownMenuItem>
-                  <DropdownMenuItem onClick={menuAction(requestDelete)} className="text-red-500">
+                  <DropdownMenuItem onSelect={deferAction(requestDelete)} className="text-red-500">
                     <Trash2 className="h-4 w-4 mr-2" />
                     Delete
                   </DropdownMenuItem>
