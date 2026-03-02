@@ -51,6 +51,13 @@ import {
 } from 'lucide-react';
 import { useState, useCallback } from 'react';
 
+// Radix/shadcn overlays use exit animations; on some mobile browsers (Edge/Android)
+// deleting the schedule while portals are still animating out can trigger a React DOM
+// reconciliation crash: "Failed to execute 'insertBefore' ...".
+// Keep a small buffer beyond the CSS animation duration to avoid the boundary race.
+const MENU_ACTION_DELAY_MS = 200; // dropdown-menu default duration ~150ms
+const DIALOG_CLOSE_DELAY_MS = 320; // alert-dialog content duration-200 + buffer
+
 interface ScheduleToolbarProps {
   schedules: Schedule[];
   currentSchedule: Schedule | null;
@@ -88,7 +95,7 @@ export function ScheduleToolbar({
   // Mobile-safe menu action: let menu close naturally, run action after DOM cleanup
   const deferAction = useCallback((action: () => void) => {
     return () => {
-      setTimeout(action, 150);
+      setTimeout(action, MENU_ACTION_DELAY_MS);
     };
   }, []);
 
@@ -100,7 +107,12 @@ export function ScheduleToolbar({
 
   const handleConfirmDelete = useCallback(() => {
     setShowDeleteConfirm(false);
-    onDeleteSchedule();
+    // Delay delete to let AlertDialog portal unmount cleanly,
+    // otherwise React DOM reconciliation crashes with insertBefore error on mobile
+    setTimeout(() => {
+      // Extra rAF to ensure the close animation has completed and the portal detached.
+      requestAnimationFrame(() => onDeleteSchedule());
+    }, DIALOG_CLOSE_DELAY_MS);
   }, [onDeleteSchedule]);
 
   // Request delete — open confirmation dialog
