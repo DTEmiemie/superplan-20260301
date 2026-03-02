@@ -3,22 +3,6 @@
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from '@/components/ui/dialog';
 import type { Schedule } from '@/types';
 import {
   Plus,
@@ -85,6 +69,14 @@ export function ScheduleToolbar({
     setShowDeleteConfirm(true);
   }, [currentSchedule]);
 
+  const openSettings = useCallback(() => {
+    setShowSettings(true);
+  }, []);
+
+  const closeSettings = useCallback(() => {
+    setShowSettings(false);
+  }, []);
+
   const cancelDelete = useCallback(() => {
     setShowDeleteConfirm(false);
     if (pendingDeleteId === null) {
@@ -110,17 +102,18 @@ export function ScheduleToolbar({
 
   // Close overlays on Escape.
   useEffect(() => {
-    if (!mobileMenuOpen && !showDeleteConfirm) return;
+    if (!mobileMenuOpen && !showDeleteConfirm && !showSettings) return;
 
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key !== 'Escape') return;
       setMobileMenuOpen(false);
       cancelDelete();
+      closeSettings();
     };
 
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [mobileMenuOpen, showDeleteConfirm, cancelDelete]);
+  }, [mobileMenuOpen, showDeleteConfirm, showSettings, cancelDelete, closeSettings]);
 
   const runMobileAction = useCallback(
     (action: () => void) => {
@@ -167,22 +160,25 @@ export function ScheduleToolbar({
       {/* Top Row - Schedule Selector & Primary Actions */}
       <div className="flex flex-wrap items-center gap-2">
         {/* Schedule Selector */}
-        {currentSchedule && schedules.length > 0 ? (
-          <Select
-            value={currentSchedule.id}
-            onValueChange={onLoadSchedule}
-          >
-            <SelectTrigger className="w-full sm:w-48">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
+        {schedules.length > 0 ? (
+          <div className="w-full sm:w-48">
+            <select
+              value={currentSchedule?.id ?? ''}
+              onChange={(e) => onLoadSchedule(e.target.value)}
+              className="border-input text-foreground focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] dark:bg-input/30 flex h-10 w-full items-center justify-between rounded-md border bg-transparent px-3 py-2 text-sm shadow-xs outline-none disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {currentSchedule === null && (
+                <option value="" disabled>
+                  Select schedule
+                </option>
+              )}
               {schedules.map((schedule) => (
-                <SelectItem key={schedule.id} value={schedule.id}>
+                <option key={schedule.id} value={schedule.id}>
                   {schedule.name} ({schedule.date})
-                </SelectItem>
+                </option>
               ))}
-            </SelectContent>
-          </Select>
+            </select>
+          </div>
         ) : (
           <div className="w-full sm:w-48 h-10 flex items-center px-3 text-sm text-muted-foreground border rounded-md">
             No schedules yet
@@ -411,24 +407,37 @@ export function ScheduleToolbar({
               </div>
             </div>
 
-            {/* Settings Dialog */}
-            <Dialog open={showSettings} onOpenChange={setShowSettings}>
-              <DialogTrigger asChild>
-                <Button variant="outline" size="sm" className="h-9 px-2 sm:px-3">
-                  <Settings className="h-4 w-4 sm:mr-1" />
-                  <span className="hidden sm:inline">Settings</span>
-                </Button>
-              </DialogTrigger>
-              <DialogContent className="max-w-sm sm:max-w-lg">
-                <DialogHeader>
-                  <DialogTitle>Schedule Settings</DialogTitle>
-                  <DialogDescription>
-                    Configure your schedule parameters
-                  </DialogDescription>
-                </DialogHeader>
+            {/* Settings Overlay (non-portal, mobile-safe) */}
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-9 px-2 sm:px-3"
+              onClick={openSettings}
+            >
+              <Settings className="h-4 w-4 sm:mr-1" />
+              <span className="hidden sm:inline">Settings</span>
+            </Button>
 
-                {currentSchedule && (
-                  <div className="space-y-4 py-4">
+            {showSettings && currentSchedule && (
+              <div className="fixed inset-0 z-50">
+                <div
+                  className="fixed inset-0 bg-black/50"
+                  onMouseDown={closeSettings}
+                  onTouchStart={closeSettings}
+                />
+                <div
+                  role="dialog"
+                  aria-modal="true"
+                  className="bg-background fixed top-[50%] left-[50%] z-50 grid w-full max-w-[calc(100%-2rem)] translate-x-[-50%] translate-y-[-50%] gap-4 rounded-lg border p-6 shadow-lg sm:max-w-lg"
+                >
+                  <div className="flex flex-col gap-2 text-center sm:text-left">
+                    <h2 className="text-lg font-semibold">Schedule Settings</h2>
+                    <p className="text-muted-foreground text-sm">
+                      Configure your schedule parameters
+                    </p>
+                  </div>
+
+                  <div className="space-y-4 py-2">
                     <div className="space-y-2">
                       <Label>Schedule Name</Label>
                       <Input
@@ -467,13 +476,13 @@ export function ScheduleToolbar({
                       />
                     </div>
                   </div>
-                )}
 
-                <DialogFooter>
-                  <Button onClick={() => setShowSettings(false)}>Close</Button>
-                </DialogFooter>
-              </DialogContent>
-            </Dialog>
+                  <div className="flex justify-end">
+                    <Button onClick={closeSettings}>Close</Button>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}

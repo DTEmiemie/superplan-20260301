@@ -1,4 +1,4 @@
-import { Component, type ReactNode } from 'react';
+import { Component, type ReactNode, type ErrorInfo } from 'react';
 
 interface Props {
   children: ReactNode;
@@ -17,6 +17,25 @@ export class ErrorBoundary extends Component<Props, State> {
 
   static getDerivedStateFromError(error: Error): State {
     return { hasError: true, error };
+  }
+
+  componentDidCatch(error: Error, info: ErrorInfo) {
+    // Surface useful crash details for mobile debugging.
+    console.error('ErrorBoundary caught an error:', error);
+    console.error('Component stack:', info.componentStack);
+    try {
+      localStorage.setItem(
+        'supermemo-plan-last-error',
+        JSON.stringify({
+          message: error.message,
+          stack: error.stack,
+          componentStack: info.componentStack,
+          time: Date.now(),
+        })
+      );
+    } catch {
+      // Ignore storage failures (private mode, quota, etc).
+    }
   }
 
   render() {
